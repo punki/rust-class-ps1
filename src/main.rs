@@ -15,9 +15,18 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::str;
 use std::thread;
+use std::fs::File;
+use std::path::Path;
+
+
+struct HttpRequest<'a>{
+	path: &'a Path,
+}
+
 
 fn main() {
     let addr = "127.0.0.1:4414";
+    static mut counter: i32 = 0;
 
     let listener = TcpListener::bind(addr).unwrap();
 
@@ -36,22 +45,47 @@ fn main() {
 
                     let mut buf = [0 ;500];
                     stream.read(&mut buf).unwrap();
+                    let mut page_content = String::new();
                     match str::from_utf8(&buf) {
                         Err(error) => println!("Received request error:\n{}", error),
-                        Ok(body) => println!("Recieved request body:\n{}", body),
+                        Ok(body) => {
+                        		println!("Recieved request body:\n{}", body);
+                        		let request = parse(body);
+                        		println!("Path = {}",request.path.display());
+                        		
+                        		let mut f =match File::open(request.path) {
+                        			Err(why) => panic!("couldn't open"),
+                        			Ok(file) => file,
+                        		};
+							
+							match f.read_to_string(&mut page_content){
+								Err(why) => panic!("couldn't read "),
+								Ok(_) =>print!("contains:\n{}", page_content),
+							};
+							println!("Page = {}",page_content);
+							
+                        		unsafe{
+                        			counter+=1;	
+                        		}                        		
+                        },
                     }
-
-                    let response =
+					let response_default;
+					unsafe{
+						response_default =format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n
                          <doctype !html><html><head><title>Hello, Rust!</title>
-                         <style>body { background-color: #111; color: #FFEEAA }
-                                h1 { font-size:2cm; text-align: center; color: black; text-shadow: 0 0 4mm red}
-                                h2 { font-size:2cm; text-align: center; color: black; text-shadow: 0 0 4mm green}
+                         <style>body {{ background-color: #111; color: #FFEEAA }}
+                                h1 {{ font-size:2cm; text-align: center; color: black; text-shadow: 0 0 4mm red}}
+                                h2 {{ font-size:2cm; text-align: center; color: black; text-shadow: 0 0 4mm green}}
                          </style></head>
                          <body>
-                         <h1>Greetings, Krusty!</h1>
-                         </body></html>\r\n";
-                    stream.write(response.as_bytes()).unwrap();
+                         <h1>Greetings, Krusty! counter={} </h1>
+                         </body></html>\r\n",counter);
+							
+					}
+					
+					stream.write(page_content.as_bytes()).unwrap();
+                    
                     println!("Connection terminates.");
                 });
             },
@@ -59,4 +93,18 @@ fn main() {
     }
 
     drop(listener);
+}
+
+fn parse(body: &str) -> HttpRequest{
+	
+	let path =match body.split("HTTP").nth(0){
+		Some(v) => match v.split("GET /").nth(1){
+			Some(vp)=>vp.trim(),
+			None=>panic!("nie ma patha")
+		},
+		None=>panic!("nie ma czesci get")
+	};
+	println!("path=|{}|",path);
+	let request = HttpRequest{path: Path::new(path)};//html/stronka.html
+	request
 }
